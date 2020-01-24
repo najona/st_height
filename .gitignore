@@ -1,0 +1,5 @@
+# don't push installation folders 
+build/*
+dist/*
+st_height.egg-info/*
+.ipynb_checkpoints
