@@ -11,6 +11,7 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 import sys
 import pdb
+from math import atan2,degrees
 
 # interpolate gridded temperature/salinity at given locations
 def interpolateTS(x, y, str):
@@ -78,6 +79,34 @@ def getA(kappa_x, dkappa, k):
     A[np.where(np.logical_and(xD>=1, xD<2))] = ((-xD[np.where(np.logical_and(xD>=1, xD<2))]+2)**3)/6
     return A
 
+def getA_harm(t,omega,p):
+    # Funktion zur Bestimmung der Designmatrix für eine polyharmonische Funktion der Form:
+    # f(x) = c_0 + a*t + s_1*sin(omega*x) + c_1*cos(omega*x) + s_2*sin(2*omega*x) + c_p*cos(p*omega*x)
+    # Input:
+    # t ...     [nx1] double, Stuetzstellen der Beobachtungen mit n ... # Beobachtungen
+    # omega ... double, Kreisfrequenz
+    # p ...     double, Ordnung der polyharmonischen Funktion d
+    #
+    # Output:
+    # A ...    [nx2*p+1] double, Designmatrix
+
+    # Designmatrix initialisieren
+    A = np.zeros((len(t), 2*(p+1)))
+    A_ = np.zeros((len(t), 2))
+
+    # konstanter Anteil
+    A_[:,0] = 1
+
+    # linearer Anteil
+    A_[:,1] = t
+
+    # Sinus- und Kosinusanteile pro Frequenz k*omega mit k = 1..p
+    for k in range(1,p+1):
+        A[:,2*k] = np.sin(k*omega*t)
+        A[:,2*k+1] = np.cos(k*omega*t)
+    A_new = np.concatenate((A_, A[:,2:]), axis=1)
+    return A_new
+
 def linearGMM(A,l):
     # Ausgeglichene Parameter
     xS = np.linalg.solve(A.T@A, (A.T).dot(l))
@@ -128,3 +157,80 @@ def autocovariance(T):
         # Autokovarianzfunktion
         gamma[k] = 1/(n - k - 1) * c
     return gamma
+
+
+#Label line with line2D label data
+def labelLine(line,x,label=None,align=True,**kwargs):
+    ax = line.axes
+    xdata = line.get_xdata()
+    ydata = line.get_ydata()
+    if (x < xdata[0]) or (x > xdata[-1]):
+        print('x label location is outside data range!')
+        return
+    #Find corresponding y co-ordinate and angle of the line
+    ip = 1
+    for i in range(len(xdata)):
+        if x < xdata[i]:
+            ip = i
+            break
+
+    y = ydata[ip-1] + (ydata[ip]-ydata[ip-1])*(x-xdata[ip-1])/(xdata[ip]-xdata[ip-1])
+
+    if not label:
+        label = line.get_label()
+
+    if align:
+        #Compute the slope
+        dx = xdata[ip] - xdata[ip-1]
+        dy = ydata[ip] - ydata[ip-1]
+        ang = degrees(atan2(dy,dx))
+
+        #Transform to screen co-ordinates
+        pt = np.array([x,y]).reshape((1,2))
+        trans_angle = ax.transData.transform_angles(np.array((ang,)),pt)[0]
+
+    else:
+        trans_angle = 0
+
+    #Set a bunch of keyword arguments
+    if 'color' not in kwargs:
+        kwargs['color'] = line.get_color()
+
+    if ('horizontalalignment' not in kwargs) and ('ha' not in kwargs):
+        kwargs['ha'] = 'center'
+
+    if ('verticalalignment' not in kwargs) and ('va' not in kwargs):
+        kwargs['va'] = 'center'
+
+    if 'backgroundcolor' not in kwargs:
+        kwargs['backgroundcolor'] = ax.get_facecolor()
+
+    if 'clip_on' not in kwargs:
+        kwargs['clip_on'] = True
+
+    if 'zorder' not in kwargs:
+        kwargs['zorder'] = 2.5
+
+    ax.text(x,y,label,rotation=trans_angle,**kwargs)
+    return
+
+def labelLines(lines,align=True,xvals=None,**kwargs):
+
+    ax = lines[0].axes
+    labLines = []
+    labels = []
+
+    #Take only the lines which have labels other than the default ones
+    for line in lines:
+        label = line.get_label()
+        if "_line" not in label:
+            labLines.append(line)
+            labels.append(label)
+
+    if xvals is None:
+        xmin,xmax = ax.get_xlim()
+        xvals = np.linspace(xmin,xmax,len(labLines)+2)[1:-1]
+
+    for line,x,label in zip(labLines,xvals,labels):
+        labelLine(line,x,label,align,**kwargs)
+    return
